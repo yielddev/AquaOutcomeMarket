@@ -104,7 +104,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
 
         lendingVault = address(2);
         
-        makerMintingHook = new MakerMintingHook(IEthereumVaultConnector(payable(address(1)))); // TODO: Set actual EVC address
+        makerMintingHook = new MakerMintingHook(IEthereumVaultConnector(payable(address(1))), address(swapVM)); // TODO: Set actual EVC address
         
         // Approve hook contract to transfer collateral from maker (required for preTransferOut hook)
         vm.prank(maker);
@@ -128,7 +128,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
         Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory programBytes = bytes.concat(
-            p.build(pmAmm._pmAmmSwap)
+            p.build(pmAmm._pmAmmSwap, abi.encode(1764410735))
             // p.build(Extruction._extruction, abi.encode(address(predictionMarket), abi.encodeWithSelector(PredictionMarket.mint.selector, maker, 1000e6)))
         );
 

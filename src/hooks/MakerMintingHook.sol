@@ -8,7 +8,11 @@ import { EVCUtil } from "evc/utils/EVCUtil.sol";
 import { IEthereumVaultConnector } from "euler-interfaces/IEthereumVaultConnector.sol";
 
 contract MakerMintingHook is EVCUtil, IMakerHooks {
-    constructor(IEthereumVaultConnector _evc) EVCUtil(address(_evc)) {}
+    address public immutable swapVM;
+    error MakerMintingHook__InvalidSender();
+    constructor(IEthereumVaultConnector _evc, address _swapVM) EVCUtil(address(_evc)) {
+        swapVM = _swapVM;
+    }
     function preTransferIn(
         address maker,
         address taker,
@@ -48,6 +52,7 @@ contract MakerMintingHook is EVCUtil, IMakerHooks {
         bytes calldata makerData,
         bytes calldata takerData
     ) external {
+        require(msg.sender == swapVM, MakerMintingHook__InvalidSender());
         (address predictionMarket, address vault, bool useBalance, bool canBorrow) = abi.decode(makerData, (address, address, bool, bool));
         // vault
         // use balance bool
@@ -81,7 +86,6 @@ contract MakerMintingHook is EVCUtil, IMakerHooks {
                             IEVault.borrow, (needed, address(this))));
                     }
                 }
-
 
                 IERC20(money).approve(predictionMarket, convert);
                 IPredictionMarket(predictionMarket).mint(maker, convert);

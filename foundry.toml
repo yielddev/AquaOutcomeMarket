@@ -4,3 +4,7 @@ out = "out"
 libs = ["lib"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Arbitrum One RPC URL (can be overridden with ARBITRUM_ONE_RPC_URL environment variable)
+[rpc_endpoints]
+arbitrum_one = "${ARBITRUM_ONE_RPC_URL:-https://arb1.arbitrum.io/rpc}"

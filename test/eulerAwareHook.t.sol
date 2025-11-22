@@ -115,7 +115,7 @@ contract EulerAwareHookTest is PredictionMarketTestBase, OpcodesDebugCustom {
         tokenB.approve(address(aqua), type(uint256).max);
 
         // Deploy hook with mock EVC
-        makerMintingHook = new MakerMintingHook(IEthereumVaultConnector(payable(address(evc))));
+        makerMintingHook = new MakerMintingHook(IEthereumVaultConnector(payable(address(evc))), address(swapVM));
             
         vm.prank(maker);
         evc.setAccountOperator(maker, address(makerMintingHook), true);
@@ -157,7 +157,7 @@ contract EulerAwareHookTest is PredictionMarketTestBase, OpcodesDebugCustom {
         Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory programBytes = bytes.concat(
-            p.build(pmAmm._pmAmmSwap)
+            p.build(pmAmm._pmAmmSwap, abi.encode(1764410735))
         );
 
         ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
@@ -269,7 +269,7 @@ contract EulerAwareHookTest is PredictionMarketTestBase, OpcodesDebugCustom {
         Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory programBytes = bytes.concat(
-            p.build(pmAmm._pmAmmSwap)
+            p.build(pmAmm._pmAmmSwap, abi.encode(1764410735))
         );
 
         ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
@@ -373,7 +373,7 @@ contract EulerAwareHookTest is PredictionMarketTestBase, OpcodesDebugCustom {
         Program memory p = ProgramBuilder.init(_opcodes());
 
         bytes memory programBytes = bytes.concat(
-            p.build(pmAmm._pmAmmSwap)
+            p.build(pmAmm._pmAmmSwap, abi.encode(1764410735))
         );
 
         // Setup: Maker has partial funds in supplyVault (200e6) but needs more

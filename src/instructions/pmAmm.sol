@@ -18,9 +18,12 @@ contract pmAmm {
     error pmmAMMSwapNoConvergence();
     error pmmAMMSwapMarketExpired();
 
-    function _pmAmmSwap(Context memory ctx, bytes calldata /* args */) internal view {
+    function _pmAmmSwap(Context memory ctx, bytes calldata args) internal view {
+
         require(ctx.swap.balanceIn > 0 && ctx.swap.balanceOut > 0, pmmAMMSwapRequiresBothBalancesNonZero(ctx.swap.balanceIn, ctx.swap.balanceOut));
-        uint256 T = 1764410735; // time stamp next week
+
+        uint256 T = abi.decode(args, (uint256)); // time stamp next week
+
         require(T > block.timestamp, pmmAMMSwapMarketExpired());
         // No is the token with the lower index
         bool isInNo = ctx.query.tokenIn < ctx.query.tokenOut ? true : false;
@@ -30,9 +33,11 @@ contract pmAmm {
         uint256 sigma = PRBMathUD60x18.sqrt(time_year); // sqrt(time/year) in fixed-point format, already scaled
         require(sigma > 0, pmmAMMSwapMarketExpired());
         uint256 lSigma = L.mul(sigma).div(MATH_SCALE);
+
         // Scale balances to internal precision
         uint256 scaledBalanceIn = ctx.swap.balanceIn * SCALE_FACTOR;
         uint256 scaledBalanceOut = ctx.swap.balanceOut * SCALE_FACTOR;
+
         // Compute current k with scaled values
         int256 current_x = isInNo ? int256(scaledBalanceIn) : int256(scaledBalanceOut);
         int256 current_y = isInNo ? int256(scaledBalanceOut) : int256(scaledBalanceIn);
