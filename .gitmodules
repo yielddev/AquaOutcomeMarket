@@ -19,3 +19,12 @@
 [submodule "lib/prb-math"]
 	path = lib/prb-math
 	url = https://github.com/PaulRBerg/prb-math
+[submodule "lib/euler-interfaces"]
+	path = lib/euler-interfaces
+	url = https://github.com/euler-xyz/euler-interfaces
+[submodule "lib/evc-playground"]
+	path = lib/evc-playground
+	url = https://github.com/euler-xyz/evc-playground
+[submodule "lib/ethereum-vault-connector"]
+	path = lib/ethereum-vault-connector
+	url = https://github.com/euler-xyz/ethereum-vault-connector

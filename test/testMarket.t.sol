@@ -36,19 +36,82 @@ contract PredictionMarketTest is Test {
         predictionMarket = new PredictionMarket(address(collateral), address(underlying), "Prediction Market");
         no = PredictionToken(predictionMarket.no());
         yes = PredictionToken(predictionMarket.yes());
+        vm.label(address(predictionMarket), "predictionMarket");
+        vm.label(address(collateral), "collateral");
+        vm.label(address(underlying), "underlying");
+        vm.label(address(no), "no");
+        vm.label(address(yes), "yes");
+        vm.label(address(user), "user");
     }
 
     function test_mint() public {
         vm.prank(user);
-        collateral.mint(user, 1000e18);
+        collateral.mint(user, 1000e6);
         vm.prank(user);
-        collateral.approve(address(predictionMarket), 1000e18);
+        collateral.approve(address(predictionMarket), 1000e6);
         vm.prank(user);
-        predictionMarket.mint(user, 1000e18);
+        predictionMarket.mint(user, 1000e6);
 
-        assertEq(collateral.balanceOf(address(predictionMarket)), 1000e18);
-        assertEq(no.balanceOf(user), 1000e18);
-        assertEq(yes.balanceOf(user), 1000e18);
+        assertEq(collateral.balanceOf(address(predictionMarket)), 1000e6);
+        assertEq(no.balanceOf(user), 1000e6);
+        assertEq(yes.balanceOf(user), 1000e6);
+    }
+
+    function test_winner_can_redeem() public {
+        vm.prank(user);
+        collateral.mint(user, 1000e6);
+
+        vm.prank(user);
+        collateral.approve(address(predictionMarket), 1000e6);
+
+        vm.prank(user);
+        predictionMarket.mint(user, 1000e6);
+
+
+        predictionMarket.setWinner(false);
+
+        vm.prank(user);
+        yes.transfer(address(1), 1000e6);
+
+        vm.prank(user);
+        no.approve(address(predictionMarket), 1000e6);
+
+        vm.prank(user);
+        predictionMarket.redeem(user, 1000e6);
+
+        assertEq(collateral.balanceOf(user), 1000e6);
+        assertEq(no.balanceOf(address(predictionMarket)), 0);
+        assertEq(yes.balanceOf(address(predictionMarket)), 0);
+    }
+
+    function test_unmint() public {
+        vm.prank(user);
+        collateral.mint(user, 1000e6);
+
+        vm.prank(user);
+        collateral.approve(address(predictionMarket), 1000e6);
+
+        vm.prank(user);
+        predictionMarket.mint(user, 1000e6);
+
+        vm.startPrank(user);
+
+        no.approve(address(predictionMarket), 500e6);
+        yes.approve(address(predictionMarket), 500e6);
+
+        predictionMarket.unmint(user, 500e6);
+
+        vm.stopPrank();
+
+        assertEq(collateral.balanceOf(user), 500e6);
+
+        assertEq(no.balanceOf(address(user)), 500e6);
+        assertEq(yes.balanceOf(address(user)), 500e6);
+
+        assertEq(no.totalSupply(), 500e6);
+        assertEq(yes.totalSupply(), 500e6);
+
+        
     }
 
     function test_malicious_mint() public {

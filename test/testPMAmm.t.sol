@@ -201,7 +201,7 @@ contract SwapVMTest is Test, OpcodesDebugCustom {
             address(swapVM),
             abi.encode(order),
             dynamic([address(tokenA), address(tokenB)]),
-            dynamic([uint256(10_000e18), uint256(10_000e18)]) // 50/50 probabiltity 
+            dynamic([uint256(1_000e6), uint256(10_000e6)]) // 50/50 probabiltity 
         );
         assertEq(strategyHash, orderHash, "Strategy hash mismatch");
 
@@ -211,15 +211,15 @@ contract SwapVMTest is Test, OpcodesDebugCustom {
             order,
             address(tokenB),
             address(tokenA),
-            500e18,
+            5e6,
             takerData
         );
 
         // uint256 expectedAmountOut = (50e18 * 100e18) / (200e18 + 50e18);
-        console.log("amountOut", amountOut / 1e12);
+        console.log("amountOut", amountOut / 1e3);
 
-        uint256 effectivePrice = amountOut / 500;
-        console.log("effectivePrice", effectivePrice / 1e12);
+        uint256 effectivePrice = amountOut * 1e18/ 5e6;
+        console.log("effectivePrice", effectivePrice);
         // assertEq(amountOut, expectedAmountOut, "Unexpected amountOut");
     }
 }

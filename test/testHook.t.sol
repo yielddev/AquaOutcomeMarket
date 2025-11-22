@@ -19,6 +19,7 @@ import { CustomSwapVMRouter } from "../src/routers/CustomSwapVMRouter.sol";
 import { MakerMintingHook } from "../src/hooks/MakerMintingHook.sol";
 import { PredictionMarket } from "../src/market/PredictionMarket.sol";
 import { PredictionToken } from "../src/market/PredictionToken.sol";
+import { IEthereumVaultConnector } from "euler-interfaces/IEthereumVaultConnector.sol";
 
 import { ITakerCallbacks } from "swap-vm/interfaces/ITakerCallbacks.sol";
 import { Program, ProgramBuilder } from "@1inch/swap-vm/test/utils/ProgramBuilder.sol";
@@ -72,6 +73,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
     address public taker = makeAddr("taker");
 
     MakerMintingHook public makerMintingHook;
+    address public lendingVault;
 
     function setUp() public override {
         super.setUp();
@@ -88,7 +90,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
 
         // Setup initial balances
         // Mint collateral to maker for the hook to use
-        collateral.mint(maker, 1000e18);
+        collateral.mint(maker, 1000e6);
 
         // Approve SwapVM to spend tokens
         vm.prank(maker);
@@ -99,8 +101,10 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
         tokenA.approve(address(aqua), type(uint256).max);
         vm.prank(maker);
         tokenB.approve(address(aqua), type(uint256).max);
+
+        lendingVault = address(2);
         
-        makerMintingHook = new MakerMintingHook();
+        makerMintingHook = new MakerMintingHook(IEthereumVaultConnector(payable(address(1)))); // TODO: Set actual EVC address
         
         // Approve hook contract to transfer collateral from maker (required for preTransferOut hook)
         vm.prank(maker);
@@ -125,6 +129,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
 
         bytes memory programBytes = bytes.concat(
             p.build(pmAmm._pmAmmSwap)
+            // p.build(Extruction._extruction, abi.encode(address(predictionMarket), abi.encodeWithSelector(PredictionMarket.mint.selector, maker, 1000e6)))
         );
 
         ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
@@ -142,7 +147,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
             postTransferInTarget: address(0),
             postTransferInData: "",
             preTransferOutTarget: address(makerMintingHook),
-            preTransferOutData: abi.encode(address(predictionMarket)),
+            preTransferOutData: abi.encode(address(predictionMarket), address(lendingVault), true, false),
             postTransferOutTarget: address(0),
             postTransferOutData: "",
             program: programBytes
@@ -158,7 +163,7 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
             address(swapVM),
             abi.encode(order),
             dynamic([address(tokenA), address(tokenB)]),
-            dynamic([uint256(10_000e18), uint256(10_000e18)]) // 50/50 probabiltity 
+            dynamic([uint256(10_000e6), uint256(10_000e6)]) // 50/50 probabiltity 
         );
         assertEq(strategyHash, orderHash, "Strategy hash mismatch");
 
@@ -186,11 +191,11 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
 
         // === Execute Swap ===
         // Mint collateral to taker and mint prediction tokens through the market
-        collateral.mint(taker, 1000e18);
+        collateral.mint(taker, 1000e6);
         vm.prank(taker);
-        collateral.approve(address(predictionMarket), 1000e18);
+        collateral.approve(address(predictionMarket), 1000e6);
         vm.prank(taker);
-        predictionMarket.mint(taker, 1000e18);
+        predictionMarket.mint(taker, 1000e6);
         
         // Taker needs to approve tokens for the swap
         vm.prank(taker);
@@ -205,16 +210,16 @@ contract HooksTest is PredictionMarketTestBase, OpcodesDebugCustom {
             order,
             address(tokenB), // tokenIn
             address(tokenA), // tokenOut
-            50e18,           // amount of tokenB to spend
+            50e6,           // amount of tokenB to spend
             takerData
         );
         (uint256 balanceIn, uint256 balanceOut) = aqua.safeBalances(maker, address(swapVM), orderHash, address(tokenB), address(tokenA));
         console.log("balanceIn", balanceIn/1e18);
         console.log("balanceOut", balanceOut/1e18);
-        assertEq(balanceIn, 10_050e18);
+        assertEq(balanceIn, 10_050e6);
         // real balance 
         uint256 takerBalance = tokenA.balanceOf(taker);
-        assertEq(tokenA.balanceOf(taker), 1000e18+amountOut);
+        assertEq(tokenA.balanceOf(taker), 1000e6+amountOut);
         assertEq(tokenB.balanceOf(maker), amountIn+amountOut);
 
         // swap in reverse against existing balance

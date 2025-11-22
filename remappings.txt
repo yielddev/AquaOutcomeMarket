@@ -8,4 +8,7 @@ forge-std/=lib/forge-std/src/
 swap-vm/=lib/swap-vm/src/
 solstat/=lib/solstat/src/
 @prb/math/=lib/prb-math/
+euler-interfaces/=lib/euler-interfaces/interfaces/
+solmate/=lib/solstat/lib/solmate/src/
+evc/=lib/ethereum-vault-connector/src/
 

@@ -5,6 +5,18 @@
       "rev": "ec7e8cf8cb2ba1131b670848d4757cd528014e80"
     }
   },
+  "lib/ethereum-vault-connector": {
+    "tag": {
+      "name": "v1.0.1",
+      "rev": "a7d3c29ef7e4964736e47675e0588630d6afbfd7"
+    }
+  },
+  "lib/euler-interfaces": {
+    "rev": "0544c7a84ca34380a2e103c7c92a102952d18203"
+  },
+  "lib/evc-playground": {
+    "rev": "cc3f4987bbeebca49c40d544fe08b3b5a7735cd0"
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.11.0",
