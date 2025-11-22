@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LicenseRef-Degensoft-SwapVM-1.1
 pragma solidity 0.8.30;
 
-import { Context } from "@1inch/swap-vm/libs/VM.sol";
-import { Opcodes } from "@1inch/swap-vm/opcodes/Opcodes.sol";
+import { Context } from "swap-vm/libs/VM.sol";
+import { Opcodes } from "swap-vm/opcodes/Opcodes.sol";
 import { pmAmm } from "../instructions/pmAmm.sol";
 
 contract OpcodesCustom is Opcodes, pmAmm {
