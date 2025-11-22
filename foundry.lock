@@ -17,11 +17,20 @@
       "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
     }
   },
+  "lib/prb-math": {
+    "tag": {
+      "name": "v2.5.0",
+      "rev": "8fc0c1a6944af02619a8c0757d480eea1d239331"
+    }
+  },
   "lib/solidity-utils": {
     "tag": {
       "name": "6.8.0",
       "rev": "e1686b3cfc520303f5b741bf2223173e529bcee4"
     }
+  },
+  "lib/solstat": {
+    "rev": "80c603f8d1b2f527a98c08e7efc02ba9d8629f2d"
   },
   "lib/swap-vm": {
     "tag": {
