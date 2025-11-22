@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import { Test } from "forge-std/Test.sol";
 import "./lib/ArbitrumLib.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "forge-std/console.sol";
 
 /// @notice Base test contract that forks Arbitrum One
@@ -33,6 +34,11 @@ abstract contract ArbitrumBaseTest is Test {
         // Log fork information
         console.log("Forked Arbitrum One at block:", block.number);
         console.log("Chain ID:", block.chainid);
+    }
+
+    function _dealUSDC(address account, uint256 amount) public {
+        vm.prank(ArbitrumLib.USDC_WHALE);
+        IERC20(ArbitrumLib.USDC).transfer(account, amount);
     }
 
     /// @notice Helper to create a new fork at a specific block
