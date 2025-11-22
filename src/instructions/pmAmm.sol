@@ -77,7 +77,7 @@ contract pmAmm {
     
     function solveKnownX(uint256 knownX, uint256 lSigma, int256 k) internal pure returns (int256) {
         int256 guess = -int256(knownX) / 2; // better initial guess for convergence
-        uint256 maxIter = 100;
+        uint256 maxIter = 10;
         int256 tol = int256(SCALE / 1e6); // Precision
 
         for (uint256 i = 0; i < maxIter; i++) {
@@ -96,7 +96,7 @@ contract pmAmm {
 
     function solveKnownY(uint256 knownY, uint256 lSigma, int256 k) internal pure returns (int256) {
         int256 guess = -int256(knownY) / 2;
-        uint256 maxIter = 100;
+        uint256 maxIter = 10;
         int256 tol = int256(SCALE / 1e6);
 
         for (uint256 i = 0; i < maxIter; i++) {

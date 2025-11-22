@@ -172,7 +172,7 @@ contract SwapVMTest is Test, OpcodesDebugCustom {
             isStrictThresholdAmount: false,
             isFirstTransferFromTaker: false,
             useTransferFromAndAquaPush: false,
-            threshold: abi.encodePacked(uint256(1e18)),
+            threshold: abi.encodePacked(uint256(0e18)),
             to: address(0),
             hasPreTransferInCallback: true,
             hasPreTransferOutCallback: false,
@@ -201,20 +201,25 @@ contract SwapVMTest is Test, OpcodesDebugCustom {
             address(swapVM),
             abi.encode(order),
             dynamic([address(tokenA), address(tokenB)]),
-            dynamic([uint256(100e18), uint256(100e18)]) // 50/50 probabiltity 
+            dynamic([uint256(10_000e18), uint256(10_000e18)]) // 50/50 probabiltity 
         );
         assertEq(strategyHash, orderHash, "Strategy hash mismatch");
+
+        vm.warp(block.timestamp + 7 days);
 
         (, uint256 amountOut) = taker.swap(
             order,
             address(tokenB),
             address(tokenA),
-            10e18,
+            500e18,
             takerData
         );
 
         // uint256 expectedAmountOut = (50e18 * 100e18) / (200e18 + 50e18);
-        console.log("amountOut", amountOut);
+        console.log("amountOut", amountOut / 1e12);
+
+        uint256 effectivePrice = amountOut / 500;
+        console.log("effectivePrice", effectivePrice / 1e12);
         // assertEq(amountOut, expectedAmountOut, "Unexpected amountOut");
     }
 }
