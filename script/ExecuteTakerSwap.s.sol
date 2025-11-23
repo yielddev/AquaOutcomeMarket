@@ -40,15 +40,23 @@ contract ExecuteTakerSwap is Script {
         // Get which order to use (f1Order, bitcoinUnderOrder, or lakersWinOrder)
         string memory orderKey = vm.envString("ORDER_KEY");
         
+        // Validate order key
+        require(
+            keccak256(bytes(orderKey)) == keccak256(bytes("f1Order")) ||
+            keccak256(bytes(orderKey)) == keccak256(bytes("bitcoinUnderOrder")) ||
+            keccak256(bytes(orderKey)) == keccak256(bytes("lakersWinOrder")),
+            "Invalid ORDER_KEY. Must be one of: f1Order, bitcoinUnderOrder, lakersWinOrder"
+        );
+        
         // Read order bytes from JSON - the structure is nested: .{orderKey}.{orderKey}
         bytes memory orderBytes = json.readBytes(string.concat(".", orderKey, ".", orderKey));
         
         // Decode the order struct from bytes
         ISwapVM.Order memory order = abi.decode(orderBytes, (ISwapVM.Order));
         
-        // Read addresses from JSON
-        address swapVMAddress = json.readAddress(".swapVM");
-        address aquaAddress = json.readAddress(".aqua");
+        // Read addresses from JSON - read from nested order object (same level as order bytes)
+        address swapVMAddress = json.readAddress(string.concat(".", orderKey, ".swapVM"));
+        address aquaAddress = json.readAddress(string.concat(".", orderKey, ".aqua"));
         
         // Get swap parameters from environment
         address tokenIn = vm.envAddress("TOKEN_IN");
@@ -127,19 +135,19 @@ contract ExecuteTakerSwap is Script {
         require(tokenInBalanceBefore >= amountIn, "Insufficient tokenIn balance");
 
         // Get quote before executing swap
-        console.log("=== Getting Quote ===");
-        (uint256 quotedAmountIn, uint256 quotedAmountOut, bytes32 quotedOrderHash) = 
-            ISwapVM(swapVMAddress).quote(order, tokenIn, tokenOut, amountIn, takerData);
+        // console.log("=== Getting Quote ===");
+        // (uint256 quotedAmountIn, uint256 quotedAmountOut, bytes32 quotedOrderHash) = 
+        //     ISwapVM(swapVMAddress).quote(order, tokenIn, tokenOut, amountIn, takerData);
         
-        console.log("=== Quote Results ===");
-        console.log("Quoted Amount In:", quotedAmountIn);
-        console.log("Quoted Amount Out:", quotedAmountOut);
-        console.log("Quoted Order Hash:");
-        console.logBytes32(quotedOrderHash);
-        if (quotedAmountIn > 0) {
-            console.log("Price (amountOut/amountIn):", (quotedAmountOut * 1e18) / quotedAmountIn);
-        }
-        require(quotedAmountOut > 0, "Quote returned zero amountOut");
+        // console.log("=== Quote Results ===");
+        // console.log("Quoted Amount In:", quotedAmountIn);
+        // console.log("Quoted Amount Out:", quotedAmountOut);
+        // console.log("Quoted Order Hash:");
+        // console.logBytes32(quotedOrderHash);
+        // if (quotedAmountIn > 0) {
+        //     console.log("Price (amountOut/amountIn):", (quotedAmountOut * 1e18) / quotedAmountIn);
+        // }
+        // require(quotedAmountOut > 0, "Quote returned zero amountOut");
 
         // Transfer tokens to callback contract
         // Use transfer() since we're transferring from ourselves (no approval needed)

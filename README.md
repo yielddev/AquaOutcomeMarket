@@ -57,3 +57,39 @@ ORDER_KEY="bitcoinUnderOrder"
 AMOUNT=100000000
 ```
 
+
+# Example Case
+```
+== Logs ==
+  === Taker Swap Configuration ===
+  Order Key: f1Order
+  SwapVM: 0xdbeeA577AFA23Ae114C933ae0C21efBD7DBD407C
+  Aqua: 0x68bC8b247ed1eee8A6712316570878ea51A7a372
+  Maker: 0xFfF746E4a7aA6CF533052b64D79830Ccc499EF92
+  Token In: 0x0BB6dD39537D37035f27cb4f1Dd3eA7DaB1dE05e
+  Token Out: 0x470299C062E35B6F0A87ce2Bd87F4fFDE2c6479D
+  Amount In: 50000000
+  Order Hash:
+  0x852a4b58622fcd2e82132c3cfcc233afe3853488943757f1fe34f37f858ce9f1
+  === Taker Swap Execution ===
+  Taker: 0xe90d4f9dE8768EFf77C43688101fCB0cd7A49B57
+  TakerCallback deployed at: 0xf7CFb89b7F637626858f5a5FB3A2Fd885a6E1389
+  === Pre-Swap Balances ===
+  Token In Balance: 100000000
+  Token Out Balance: 100000000
+  Transferred 50000000 tokenIn to TakerCallback
+  === Executing Swap ===
+  === Swap Results ===
+  Actual Amount In: 50000000
+  Actual Amount Out: 30547512
+  === Post-Swap Balances ===
+  Token In Balance: 50000000
+  Token Out Balance: 130547512
+  Token In Spent: 50000000
+  Token Out Received: 30547512
+  === Maker's Aqua Balances ===
+  Balance In: 10050000000
+  Balance Out: 9969452488
+```
+
+https://explorer.buildbear.io/payable-mystique-f89040ff/tx/0xa108bb808d7d6882573714708cf42227df8d2686e8e64d9e8437a584e23d3c7c
