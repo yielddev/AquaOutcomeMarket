@@ -21,7 +21,7 @@ contract OpcodesCustom is Opcodes, pmAmm {
             instructions[i] = baseOpcodes[i];
         }
         
-        // Add custom pmAmm swap opcode at the end
+        //Add custom pmAmm swap opcode at the end
         instructions[baseOpcodes.length] = pmAmm._pmAmmSwap;
         
         return instructions;

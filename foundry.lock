@@ -35,6 +35,9 @@
       "rev": "8fc0c1a6944af02619a8c0757d480eea1d239331"
     }
   },
+  "lib/solidity-cdf": {
+    "rev": "79a3da8178a9c76cdf3b17f4d7ab19dffe94f020"
+  },
   "lib/solidity-utils": {
     "tag": {
       "name": "6.8.0",

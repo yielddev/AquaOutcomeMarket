@@ -15,6 +15,7 @@ import "./ArbitrumBaseTest.t.sol";
 import { OpcodesDebugCustom } from "../src/opcodes/OpcodesDebugCustom.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IEVault } from "euler-interfaces/IEVault.sol";
+import { IPredictionMarket } from "../src/market/IPredictionMarket.sol";
 
 contract FullSim is ArbitrumBaseTest, OpcodesDebugCustom {
     using ProgramBuilder for Program;
@@ -49,7 +50,7 @@ contract FullSim is ArbitrumBaseTest, OpcodesDebugCustom {
 
         bytes32 f1Hash = shipMakerOrder(swapVM, f1MakerOrder, IPredictionMarket(f1Market).no(), IPredictionMarket(f1Market).yes(), 10_000e6, 10_000e6);
         bytes32 bitcoinUnderHash = shipMakerOrder(swapVM, bitcoinUnderOrder, IPredictionMarket(bitcoinUnder).no(), IPredictionMarket(bitcoinUnder).yes(), 10_000e6, 10_000e6);
-        bytes32 lakersWinHash = shipMakerOrder(swapVM, lakersWinOrder, IPredictionMarket(lakersWin).no(), IPredictionMarket(lakersWin.yes()), 10_000e6, 10_000e6);
+        bytes32 lakersWinHash = shipMakerOrder(swapVM, lakersWinOrder, IPredictionMarket(lakersWin).no(), IPredictionMarket(lakersWin).yes(), 10_000e6, 10_000e6);
 
         _dealUSDC(maker, 10_000e6);
 

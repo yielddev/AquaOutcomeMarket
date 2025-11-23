@@ -1,7 +1,7 @@
 pragma solidity 0.8.30;
 import "@prb/math/contracts/PRBMathSD59x18.sol";
 import "@prb/math/contracts/PRBMathUD60x18.sol";
-import "solstat/Gaussian.sol"; // From Solstat, assuming cdf(z) and pdf(z) return int256 (scaled 1e18)
+import { Gaussian as GaussianCDF } from "solgauss/Gaussian.sol"; // CDF from cairoeth/solgauss
 import { Context, ContextLib } from "swap-vm/libs/VM.sol";
 
 contract pmAmm {
@@ -17,74 +17,76 @@ contract pmAmm {
     error pmmAMMSwapNegativeX(int256 x);
     error pmmAMMSwapNoConvergence();
     error pmmAMMSwapMarketExpired();
-
+    function pdf(int256 z) internal pure returns (int256) {
+        int256 zSquared = z.mul(z);
+        int256 exponent = zSquared.div(-2e18); // Scaled to 1e18
+        int256 expVal = PRBMathSD59x18.exp(exponent);
+        int256 twoPi = PRBMathSD59x18.mul(PRBMathSD59x18.fromInt(2), PRBMathSD59x18.pi());
+        int256 denominator = PRBMathSD59x18.sqrt(twoPi);
+        return expVal.div(denominator);
+    }
     function _pmAmmSwap(Context memory ctx, bytes calldata args) internal view {
-
         require(ctx.swap.balanceIn > 0 && ctx.swap.balanceOut > 0, pmmAMMSwapRequiresBothBalancesNonZero(ctx.swap.balanceIn, ctx.swap.balanceOut));
 
-        uint256 T = abi.decode(args, (uint256)); // time stamp next week
-
+        uint256 T = abi.decode(args, (uint256));
         require(T > block.timestamp, pmmAMMSwapMarketExpired());
-        // No is the token with the lower index
-        bool isInNo = ctx.query.tokenIn < ctx.query.tokenOut ? true : false;
-        uint256 time_diff = T - block.timestamp;
-        uint256 year_secs = 31536000;
-        uint256 time_year = PRBMathUD60x18.div(PRBMathUD60x18.fromUint(time_diff), PRBMathUD60x18.fromUint(year_secs));
-        uint256 sigma = PRBMathUD60x18.sqrt(time_year); // sqrt(time/year) in fixed-point format, already scaled
-        require(sigma > 0, pmmAMMSwapMarketExpired());
-        uint256 lSigma = L.mul(sigma).div(MATH_SCALE);
 
-        // Scale balances to internal precision
+        bool isInNo = ctx.query.tokenIn < ctx.query.tokenOut;
+        uint256 lSigma;
+        {
+            // Scoped for sigma
+            uint256 time_year = PRBMathUD60x18.div(PRBMathUD60x18.fromUint(T - block.timestamp), PRBMathUD60x18.fromUint(31536000));
+            uint256 sigma = PRBMathUD60x18.sqrt(time_year);
+        require(sigma > 0, pmmAMMSwapMarketExpired());
+            lSigma = L.mul(sigma).div(MATH_SCALE);
+        }
+
         uint256 scaledBalanceIn = ctx.swap.balanceIn * SCALE_FACTOR;
         uint256 scaledBalanceOut = ctx.swap.balanceOut * SCALE_FACTOR;
 
-        // Compute current k with scaled values
+        int256 k;
+        {
+            // Scoped for k
         int256 current_x = isInNo ? int256(scaledBalanceIn) : int256(scaledBalanceOut);
         int256 current_y = isInNo ? int256(scaledBalanceOut) : int256(scaledBalanceIn);
         int256 current_delta = current_y - current_x;
         int256 current_z = current_delta.div(int256(lSigma));
-        int256 current_Phi = Gaussian.cdf(current_z);
-        int256 current_phi = Gaussian.pdf(current_z);
-        int256 k = current_delta.mul(current_Phi) + int256(lSigma).mul(current_phi) - current_y;
-        bool isExactIn = ctx.query.isExactIn;
-
-        if (isExactIn) {
-            uint256 scaledAmountIn = ctx.swap.amountIn * SCALE_FACTOR;
-            uint256 newBalanceIn = scaledBalanceIn + scaledAmountIn;
-            uint256 scaledAmountOut;
-            if (isInNo) {
-                // Adding to x, known newX, solve f(delta) = delta*(Phi-1) + lSigma*phi - newX = k
-                int256 delta = solveKnownX(newBalanceIn, lSigma, k);
-                int256 signedNewY = int256(newBalanceIn) + delta;
-                require(signedNewY >= 0, pmmAMMSwapNegativeY(signedNewY));
-                scaledAmountOut = scaledBalanceOut - uint256(signedNewY);
-            } else {
-                // Adding to y, known newY, solve f(delta) = delta*Phi + lSigma*phi - newY = k
-                int256 delta = solveKnownY(newBalanceIn, lSigma, k);
-                int256 signedNewX = int256(newBalanceIn) - delta;
-                require(signedNewX >= 0, pmmAMMSwapNegativeX(signedNewX));
-                scaledAmountOut = scaledBalanceOut - uint256(signedNewX);
-            }
-            ctx.swap.amountOut = scaledAmountOut / SCALE_FACTOR;
-        } else { // exact outSwap
-            uint256 scaledAmountOut = ctx.swap.amountOut * SCALE_FACTOR;
-            uint256 newBalanceOut = scaledBalanceOut - scaledAmountOut;
-            uint256 scaledAmountIn;
-            if (isInNo) {
-                // Subtracting from y, known newY, solve f(delta) = delta*Phi + lSigma*phi - newY = k
-                int256 delta = solveKnownY(newBalanceOut, lSigma, k);
-                int256 signedNewX = int256(newBalanceOut) - delta;
-                require(signedNewX >= 0, pmmAMMSwapNegativeX(signedNewX));
-                scaledAmountIn = uint256(signedNewX) - scaledBalanceIn;
-            } else {
-                // Subtracting from x, known newX, solve f(delta) = delta*(Phi-1) + lSigma*phi - newX = k
-                int256 delta = solveKnownX(newBalanceOut, lSigma, k);
-                int256 signedNewY = int256(newBalanceOut) + delta;
-                require(signedNewY >= 0, pmmAMMSwapNegativeY(signedNewY));
-                scaledAmountIn = uint256(signedNewY) - scaledBalanceIn;
-            }
-            ctx.swap.amountIn = scaledAmountIn / SCALE_FACTOR;
+            // Use new CDF library: cdf(x, mu, sigma) where mu=0, sigma=1 for standard normal
+            // Convert uint256 result to int256 (CDF returns [0, 1e18] range)
+            uint256 cdfResult = GaussianCDF.cdf(current_z, 0, 1e18);
+            int256 cdfInt = int256(cdfResult);
+            k = current_delta.mul(cdfInt) + int256(lSigma).mul(pdf(current_z)) - current_y;
         }
+
+        if (ctx.query.isExactIn) {
+            _handleExactIn(ctx, isInNo, lSigma, scaledBalanceIn, scaledBalanceOut, k);
+        } else {
+            _handleExactOut(ctx, isInNo, lSigma, scaledBalanceIn, scaledBalanceOut, k);
+        }
+    }
+
+    function _handleExactIn(Context memory ctx, bool isInNo, uint256 lSigma, uint256 scaledBalanceIn, uint256 scaledBalanceOut, int256 k) internal pure {
+            uint256 scaledAmountIn = ctx.swap.amountIn * SCALE_FACTOR;
+        uint256 newBalance = scaledBalanceIn + scaledAmountIn;
+        int256 delta = isInNo ? solveKnownX(newBalance, lSigma, k) : solveKnownY(newBalance, lSigma, k);
+        int256 signedNewOther = isInNo ? int256(newBalance) + delta : int256(newBalance) - delta;
+        if (signedNewOther < 0) {
+            if (isInNo) revert pmmAMMSwapNegativeY(signedNewOther);
+            revert pmmAMMSwapNegativeX(signedNewOther);
+        }
+        ctx.swap.amountOut = (scaledBalanceOut - uint256(signedNewOther)) / SCALE_FACTOR;
+    }
+
+    function _handleExactOut(Context memory ctx, bool isInNo, uint256 lSigma, uint256 scaledBalanceIn, uint256 scaledBalanceOut, int256 k) internal pure {
+            uint256 scaledAmountOut = ctx.swap.amountOut * SCALE_FACTOR;
+        uint256 newBalance = scaledBalanceOut - scaledAmountOut;
+        int256 delta = isInNo ? solveKnownY(newBalance, lSigma, k) : solveKnownX(newBalance, lSigma, k);
+        int256 signedNewOther = isInNo ? int256(newBalance) - delta : int256(newBalance) + delta;
+        if (signedNewOther < 0) {
+            if (isInNo) revert pmmAMMSwapNegativeX(signedNewOther);
+            revert pmmAMMSwapNegativeY(signedNewOther);
+        }
+        ctx.swap.amountIn = (uint256(signedNewOther) - scaledBalanceIn) / SCALE_FACTOR;
     }
     
     function solveKnownX(uint256 knownX, uint256 lSigma, int256 k) internal pure returns (int256) {
@@ -94,8 +96,9 @@ contract pmAmm {
 
         for (uint256 i = 0; i < maxIter; i++) {
             int256 z = guess.div(int256(lSigma));
-            int256 Phi = Gaussian.cdf(z);
-            int256 phi = Gaussian.pdf(z);
+            uint256 cdfResult = GaussianCDF.cdf(z, 0, 1e18);
+            int256 Phi = int256(cdfResult);
+            int256 phi = pdf(z);
             int256 f = guess.mul(Phi) - guess + int256(lSigma).mul(phi) - int256(knownX) - k;
             int256 df = Phi - int256(MATH_SCALE);
             if (df == 0) df = 1; // Rare edge
@@ -113,8 +116,9 @@ contract pmAmm {
 
         for (uint256 i = 0; i < maxIter; i++) {
             int256 z = guess.div(int256(lSigma));
-            int256 Phi = Gaussian.cdf(z);
-            int256 phi = Gaussian.pdf(z);
+            uint256 cdfResult = GaussianCDF.cdf(z, 0, 1e18);
+            int256 Phi = int256(cdfResult);
+            int256 phi = pdf(z);
             int256 f = guess.mul(Phi) + int256(lSigma).mul(phi) - int256(knownY) - k;
             int256 df = Phi;
             if (df == 0) df = 1;
@@ -128,5 +132,4 @@ contract pmAmm {
     function abs(int256 a) internal pure returns (int256) {
         return a >= 0 ? a : -a;
     }   
-
 }

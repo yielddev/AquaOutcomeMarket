@@ -28,3 +28,9 @@
 [submodule "lib/ethereum-vault-connector"]
 	path = lib/ethereum-vault-connector
 	url = https://github.com/euler-xyz/ethereum-vault-connector
+[submodule "lib/solidity-cdf"]
+	path = lib/solidity-cdf
+	url = https://github.com/fiveoutofnine/solidity-cdf
+[submodule "lib/solgauss"]
+	path = lib/solgauss
+	url = https://github.com/cairoeth/solgauss

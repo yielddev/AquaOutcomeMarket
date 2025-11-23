@@ -67,8 +67,9 @@ contract MakerMintingHook is EVCUtil, IMakerHooks {
 
                 if (useBalance) {
                     avail = money.balanceOf(maker);
+                    avail = avail > needed ? needed : avail;
                     IERC20(money).transferFrom(maker, address(this), avail);
-                    needed = avail > needed ? 0: needed - avail;
+                    needed = avail >= needed ? 0: needed - avail;
                 }
 
                 if (needed > 0) {

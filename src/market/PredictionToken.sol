@@ -11,6 +11,10 @@ contract PredictionToken is ERC20, Ownable {
         return symbol_;
     }
 
+    function decimals() public view override returns (uint8) {
+        return 6;
+    }
+
     function setSymbol(string memory symbol_) public onlyOwner {
         symbol_ = symbol_;
     }

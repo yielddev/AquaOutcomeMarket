@@ -6,26 +6,23 @@ import {PredictionMarket} from "../src/market/PredictionMarket.sol";
 import {Aqua} from "@1inch/aqua/src/Aqua.sol";
 import {CustomSwapVMRouter} from "../src/routers/CustomSwapVMRouter.sol";
 import {MakerMintingHook} from "../src/hooks/MakerMintingHook.sol";
+import {PredictionMarketAMM} from "../src/strategies/PredictionMarketAMM.sol";
 import {IEthereumVaultConnector} from "euler-interfaces/IEthereumVaultConnector.sol";
 import {ISwapVM} from "swap-vm/interfaces/ISwapVM.sol";
-import {Program, ProgramBuilder} from "@1inch/swap-vm/test/utils/ProgramBuilder.sol";
-import {Fee, FeeArgsBuilder} from "swap-vm/instructions/Fee.sol";
-import {MakerTraitsLib} from "swap-vm/libs/MakerTraits.sol";
 import {dynamic} from "@1inch/swap-vm/test/utils/Dynamic.sol";
-import {pmAmm} from "../src/instructions/pmAmm.sol";
 import {OpcodesDebugCustom} from "../src/opcodes/OpcodesDebugCustom.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IEVault} from "euler-interfaces/IEVault.sol";
 import { IPredictionMarket } from "../src/market/IPredictionMarket.sol";
 import "../test/lib/ArbitrumLib.sol";
 import "forge-std/console.sol";
+import "forge-std/StdJson.sol";
 
 contract DeployFullSystem is Script, OpcodesDebugCustom {
-    using ProgramBuilder for Program;
-
     // Deployment addresses - will be populated during deployment
     address public aqua;
     address public swapVM;
+    address public strategy;
     address public makerMintingHook;
     address public f1Market;
     address public bitcoinUnderMarket;
@@ -56,6 +53,9 @@ contract DeployFullSystem is Script, OpcodesDebugCustom {
 
         // Deploy SwapVM
         swapVM = deploySwapVM(aqua);
+
+        // Deploy PredictionMarketAMM strategy
+        strategy = deployStrategy(aqua);
 
         // Deploy MakerMintingHook
         makerMintingHook = deployMakerMintingHook(ArbitrumLib.EVC, swapVM);
@@ -96,8 +96,8 @@ contract DeployFullSystem is Script, OpcodesDebugCustom {
             bitcoinUnderOrder,
             IPredictionMarket(bitcoinUnderMarket).no(),
             IPredictionMarket(bitcoinUnderMarket).yes(),
-            10_000e6,
-            10_000e6
+            70_000e6,
+            30_000e6
         );
         lakersWinOrderHash = shipMakerOrder(
             aqua,
@@ -105,8 +105,8 @@ contract DeployFullSystem is Script, OpcodesDebugCustom {
             lakersWinOrder,
             IPredictionMarket(lakersWinMarket).no(),
             IPredictionMarket(lakersWinMarket).yes(),
-            10_000e6,
-            10_000e6
+            75_000e6,
+            25_000e6
         );
 
         // Note: In production, ensure the maker address has sufficient USDC balance
@@ -121,20 +121,165 @@ contract DeployFullSystem is Script, OpcodesDebugCustom {
 
         vm.stopBroadcast();
 
-        // Log deployment addresses
+        // Encode orders as bytes for storage
+        bytes memory f1OrderBytes = abi.encode(f1MakerOrder);
+        bytes memory bitcoinUnderOrderBytes = abi.encode(bitcoinUnderOrder);
+        bytes memory lakersWinOrderBytes = abi.encode(lakersWinOrder);
+
+        // Log to console
+        _logDeployment(maker, aqua, swapVM, strategy, makerMintingHook, f1Market, bitcoinUnderMarket, lakersWinMarket, f1OrderHash, bitcoinUnderOrderHash, lakersWinOrderHash, f1OrderBytes, bitcoinUnderOrderBytes, lakersWinOrderBytes);
+
+        // Write to files
+        uint256 chainId = block.chainid;
+        _writeDeploymentFiles(chainId, maker, aqua, swapVM, strategy, makerMintingHook, f1Market, bitcoinUnderMarket, lakersWinMarket, f1OrderHash, bitcoinUnderOrderHash, lakersWinOrderHash, f1OrderBytes, bitcoinUnderOrderBytes, lakersWinOrderBytes);
+    }
+
+    function _logDeployment(
+        address deployer,
+        address aquaAddr,
+        address swapVMAddr,
+        address strategyAddr,
+        address hookAddr,
+        address f1MarketAddr,
+        address bitcoinMarketAddr,
+        address lakersMarketAddr,
+        bytes32 f1Hash,
+        bytes32 bitcoinHash,
+        bytes32 lakersHash,
+        bytes memory f1OrderBytes,
+        bytes memory bitcoinOrderBytes,
+        bytes memory lakersOrderBytes
+    ) internal {
         console.log("=== Deployment Summary ===");
-        console.log("Aqua:", aqua);
-        console.log("SwapVM:", swapVM);
-        console.log("MakerMintingHook:", makerMintingHook);
-        console.log("F1 Market:", f1Market);
-        console.log("Bitcoin Under Market:", bitcoinUnderMarket);
-        console.log("Lakers Win Market:", lakersWinMarket);
+        console.log("Deployer:", deployer);
+        console.log("Aqua:", aquaAddr);
+        console.log("SwapVM:", swapVMAddr);
+        console.log("Strategy (PredictionMarketAMM):", strategyAddr);
+        console.log("MakerMintingHook:", hookAddr);
+        console.log("F1 Market:", f1MarketAddr);
+        console.log("Bitcoin Under Market:", bitcoinMarketAddr);
+        console.log("Lakers Win Market:", lakersMarketAddr);
         console.log("F1 Order Hash:");
-        console.logBytes32(f1OrderHash);
+        console.logBytes32(f1Hash);
         console.log("Bitcoin Under Order Hash:");
-        console.logBytes32(bitcoinUnderOrderHash);
+        console.logBytes32(bitcoinHash);
         console.log("Lakers Win Order Hash:");
-        console.logBytes32(lakersWinOrderHash);
+        console.logBytes32(lakersHash);
+        console.log("F1 Order Bytes Length:", f1OrderBytes.length);
+        console.log("Bitcoin Under Order Bytes Length:", bitcoinOrderBytes.length);
+        console.log("Lakers Win Order Bytes Length:", lakersOrderBytes.length);
+    }
+
+    function _writeDeploymentFiles(
+        uint256 chainId,
+        address deployer,
+        address aquaAddr,
+        address swapVMAddr,
+        address strategyAddr,
+        address hookAddr,
+        address f1MarketAddr,
+        address bitcoinMarketAddr,
+        address lakersMarketAddr,
+        bytes32 f1Hash,
+        bytes32 bitcoinHash,
+        bytes32 lakersHash,
+        bytes memory f1OrderBytes,
+        bytes memory bitcoinOrderBytes,
+        bytes memory lakersOrderBytes
+    ) internal {
+        // Write markdown file
+        string memory mdPath = string.concat("script/json/deployment-", vm.toString(chainId), ".md");
+        string memory md = _buildMarkdown(deployer, aquaAddr, swapVMAddr, strategyAddr, hookAddr, f1MarketAddr, bitcoinMarketAddr, lakersMarketAddr, f1Hash, bitcoinHash, lakersHash);
+        vm.writeFile(mdPath, md);
+        
+        // Write JSON file
+        _writeDeploymentJson(chainId, deployer, aquaAddr, swapVMAddr, strategyAddr, hookAddr, f1MarketAddr, bitcoinMarketAddr, lakersMarketAddr, f1Hash, bitcoinHash, lakersHash, f1OrderBytes, bitcoinOrderBytes, lakersOrderBytes);
+    }
+
+    function _buildMarkdown(
+        address deployer,
+        address aquaAddr,
+        address swapVMAddr,
+        address strategyAddr,
+        address hookAddr,
+        address f1MarketAddr,
+        address bitcoinMarketAddr,
+        address lakersMarketAddr,
+        bytes32 f1Hash,
+        bytes32 bitcoinHash,
+        bytes32 lakersHash
+    ) internal returns (string memory) {
+        string memory md = "# Deployment Summary\n\n";
+        md = string.concat(md, "## Core Contracts\n\n");
+        md = string.concat(md, "- **Deployer**: `", vm.toString(deployer), "`\n");
+        md = string.concat(md, "- **Aqua**: `", vm.toString(aquaAddr), "`\n");
+        md = string.concat(md, "- **SwapVM**: `", vm.toString(swapVMAddr), "`\n");
+        md = string.concat(md, "- **Strategy**: `", vm.toString(strategyAddr), "`\n");
+        md = string.concat(md, "- **MakerMintingHook**: `", vm.toString(hookAddr), "`\n\n");
+        md = string.concat(md, "## Markets\n\n");
+        md = string.concat(md, "- **F1 Market**: `", vm.toString(f1MarketAddr), "`\n");
+        md = string.concat(md, "- **Bitcoin Under Market**: `", vm.toString(bitcoinMarketAddr), "`\n");
+        md = string.concat(md, "- **Lakers Win Market**: `", vm.toString(lakersMarketAddr), "`\n\n");
+        md = string.concat(md, "## Order Hashes\n\n");
+        md = string.concat(md, "- **F1 Order Hash**: `", vm.toString(f1Hash), "`\n");
+        md = string.concat(md, "- **Bitcoin Under Order Hash**: `", vm.toString(bitcoinHash), "`\n");
+        md = string.concat(md, "- **Lakers Win Order Hash**: `", vm.toString(lakersHash), "`\n\n");
+        md = string.concat(md, "## Order Bytes\n\n");
+        md = string.concat(md, "Order bytes are stored in the JSON file. Use `vm.parseJsonBytes()` to load them.\n");
+        return md;
+    }
+
+    function _writeDeploymentJson(
+        uint256 chainId,
+        address deployer,
+        address aquaAddr,
+        address swapVMAddr,
+        address strategyAddr,
+        address hookAddr,
+        address f1MarketAddr,
+        address bitcoinMarketAddr,
+        address lakersMarketAddr,
+        bytes32 f1Hash,
+        bytes32 bitcoinHash,
+        bytes32 lakersHash,
+        bytes memory f1OrderBytes,
+        bytes memory bitcoinOrderBytes,
+        bytes memory lakersOrderBytes
+    ) internal {
+        string memory jsonPath = string.concat("script/json/deployment-", vm.toString(chainId), ".json");
+        
+        // Use consistent object key for all serialization
+        string memory jsonKey = "deployment";
+        
+        // Serialize addresses - each call returns updated JSON
+        string memory json = vm.serializeAddress(jsonKey, "deployer", deployer);
+        json = vm.serializeAddress(jsonKey, "aqua", aquaAddr);
+        json = vm.serializeAddress(jsonKey, "swapVM", swapVMAddr);
+        json = vm.serializeAddress(jsonKey, "strategy", strategyAddr);
+        json = vm.serializeAddress(jsonKey, "makerMintingHook", hookAddr);
+        json = vm.serializeAddress(jsonKey, "f1Market", f1MarketAddr);
+        json = vm.serializeAddress(jsonKey, "bitcoinUnderMarket", bitcoinMarketAddr);
+        json = vm.serializeAddress(jsonKey, "lakersWinMarket", lakersMarketAddr);
+        
+        // Serialize order hashes
+        json = vm.serializeBytes32(jsonKey, "f1OrderHash", f1Hash);
+        json = vm.serializeBytes32(jsonKey, "bitcoinUnderOrderHash", bitcoinHash);
+        json = vm.serializeBytes32(jsonKey, "lakersWinOrderHash", lakersHash);
+        
+        // Write base JSON first (addresses + hashes)
+        vm.writeJson(json, jsonPath);
+        
+        // Add bytes fields using writeJson with valueKey to update existing file
+        string memory f1OrderJson = vm.serializeBytes(jsonKey, "f1Order", f1OrderBytes);
+        vm.writeJson(f1OrderJson, jsonPath, "f1Order");
+        
+        string memory bitcoinOrderJson = vm.serializeBytes(jsonKey, "bitcoinUnderOrder", bitcoinOrderBytes);
+        vm.writeJson(bitcoinOrderJson, jsonPath, "bitcoinUnderOrder");
+        
+        string memory lakersOrderJson = vm.serializeBytes(jsonKey, "lakersWinOrder", lakersOrderBytes);
+        vm.writeJson(lakersOrderJson, jsonPath, "lakersWinOrder");
+        
+        console.log("Deployment JSON written to:", jsonPath);
     }
 
     function deployPredictionMarket(string memory name, address usdc) public returns (address) {
@@ -149,6 +294,11 @@ contract DeployFullSystem is Script, OpcodesDebugCustom {
             "0.0.1"
         );
         return address(swapVMInstance);
+    }
+
+    function deployStrategy(address aquaAddress) public returns (address) {
+        PredictionMarketAMM strategyInstance = new PredictionMarketAMM(aquaAddress);
+        return address(strategyInstance);
     }
 
     function deployMakerMintingHook(address evc, address swapVMAddress)
@@ -169,39 +319,22 @@ contract DeployFullSystem is Script, OpcodesDebugCustom {
         address yieldVault,
         uint256 horizon
     ) public view returns (ISwapVM.Order memory) {
-        Program memory p = ProgramBuilder.init(_opcodes());
-        bytes memory programBytes = bytes.concat(
-            p.build(Fee._flatFeeAmountInXD, FeeArgsBuilder.buildFlatFee(uint32(3e6))),
-            p.build(pmAmm._pmAmmSwap, abi.encode(horizon))
+        // Use the PredictionMarketAMM strategy to build the order
+        // Fee scale: 1e9 = 100%, so 3e6 = 0.3%
+        return PredictionMarketAMM(strategy).buildProgram(
+            maker,
+            uint40(block.timestamp + 365 days), // expiration: 1 year from now
+            horizon, // horizon: market expiry time
+            3_000_000, // feeBpsIn: 0.3% (3e6 when 1e9 = 100%)
+            0, // protocolFeeBpsIn: 0% (no protocol fee)
+            address(0), // feeReceiver: not used when protocolFeeBpsIn is 0
+            makerMintingHookAddress,
+            predictionMarket,
+            yieldVault,
+            true, // useBalance: use maker's balance outside of vaults
+            true, // shouldBorrow: allow borrowing if needed
+            0 // salt: no salt needed
         );
-        ISwapVM.Order memory order = MakerTraitsLib.build(
-            MakerTraitsLib.Args({
-                maker: maker,
-                shouldUnwrapWeth: false,
-                useAquaInsteadOfSignature: true,
-                allowZeroAmountIn: false,
-                receiver: address(0),
-                hasPreTransferInHook: false,
-                hasPostTransferInHook: false,
-                hasPreTransferOutHook: true,
-                hasPostTransferOutHook: false,
-                preTransferInTarget: address(0),
-                preTransferInData: "",
-                postTransferInTarget: address(0),
-                postTransferInData: "",
-                preTransferOutTarget: makerMintingHookAddress,
-                preTransferOutData: abi.encode(
-                    address(predictionMarket),
-                    address(yieldVault),
-                    true,
-                    true
-                ),
-                postTransferOutTarget: address(0),
-                postTransferOutData: "",
-                program: programBytes
-            })
-        );
-        return order;
     }
 
     function shipMakerOrder(

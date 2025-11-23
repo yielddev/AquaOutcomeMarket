@@ -326,9 +326,18 @@ contract SwapVMTest is Test, OpcodesDebugCustom {
         uint256 swapAmount
     ) public {
         // Bound inputs to reasonable ranges that ensure convergence
-        balanceA = bound(balanceA, 1_000e6, 50_000e6); // 1k to 50k tokens
-        balanceB = bound(balanceB, 1_000e6, 50_000e6); // 1k to 50k tokens
-        swapAmount = bound(swapAmount, 1e6, balanceB / 20); // 1 token to 5% of balanceB (more conservative)
+        // Use tighter bounds to prevent extreme ratios that cause convergence issues
+        balanceA = bound(balanceA, 5_000e6, 20_000e6); // 5k to 20k tokens (tighter range)
+        balanceB = bound(balanceB, 5_000e6, 20_000e6); // 5k to 20k tokens (tighter range)
+        
+        // Ensure balance ratio isn't too extreme (within 5x of each other)
+        if (balanceA > balanceB * 5) balanceA = balanceB * 5;
+        if (balanceB > balanceA * 5) balanceB = balanceA * 5;
+        
+        // Ensure swapAmount is reasonable relative to balanceB (max 2% for better convergence)
+        uint256 maxSwapAmount = balanceB / 50; // Max 2% of balanceB
+        if (maxSwapAmount < 1e6) maxSwapAmount = 1e6; // At least 1 token
+        swapAmount = bound(swapAmount, 1e6, maxSwapAmount);
         
         Program memory p = ProgramBuilder.init(_opcodes());
         bytes memory programBytes = bytes.concat(

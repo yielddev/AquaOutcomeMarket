@@ -1,210 +1,475 @@
-// // SPDX-License-Identifier: LicenseRef-Degensoft-SwapVM-1.1
-// pragma solidity 0.8.30;
+// SPDX-License-Identifier: LicenseRef-Degensoft-SwapVM-1.1
+pragma solidity 0.8.30;
 
-// /// @custom:license-url https://github.com/1inch/swap-vm/blob/main/LICENSES/SwapVM-1.1.txt
-// /// @custom:copyright © 2025 Degensoft Ltd
+/// @custom:license-url https://github.com/1inch/swap-vm/blob/main/LICENSES/SwapVM-1.1.txt
+/// @custom:copyright © 2025 Degensoft Ltd
 
-// import { Test } from "forge-std/Test.sol";
-// import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-// import { Aqua } from "@1inch/aqua/src/Aqua.sol";
+import { Test } from "forge-std/Test.sol";
+import { Vm } from "forge-std/Vm.sol";
+import { TokenMock } from "@1inch/solidity-utils/contracts/mocks/TokenMock.sol";
 
-// import { dynamic } from "./utils/Dynamic.sol";
+import { Aqua } from "@1inch/aqua/src/Aqua.sol";
 
-// import { SwapVM, ISwapVM } from "@1inch/swap-vm/src/SwapVM.sol";
-// import { SwapVMRouter } from "@1inch/swap-vm/src/routers/SwapVMRouter.sol";
-// import { MakerTraitsLib } from "@1inch/swap-vm/src/libs/MakerTraits.sol";
-// import { TakerTraitsLib } from "@1inch/swap-vm/src/libs/TakerTraits.sol";
-// import { OpcodesDebugCustom } from "@1inch/swap-vm/src/opcodes/OpcodesDebugCustom.sol";
-// import { XYCSwap } from "@1inch/swap-vm/src/instructions/XYCSwap.sol";
+import { dynamic } from "@1inch/swap-vm/test/utils/Dynamic.sol";
 
-// import { ITakerCallbacks } from "@1inch/swap-vm/src/interfaces/ITakerCallbacks.sol";
-// import { Program, ProgramBuilder } from "./utils/ProgramBuilder.sol";
+import { SwapVM, ISwapVM } from "swap-vm/SwapVM.sol";
+import { SwapVMRouter } from "swap-vm/routers/SwapVMRouter.sol";
+import { MakerTraitsLib } from "swap-vm/libs/MakerTraits.sol";
+import { TakerTraitsLib } from "swap-vm/libs/TakerTraits.sol";
+import { OpcodesDebug } from "swap-vm/opcodes/OpcodesDebug.sol";
+import { Balances, BalancesArgsBuilder } from "swap-vm/instructions/Balances.sol";
+import { LimitSwap, LimitSwapArgsBuilder } from "swap-vm/instructions/LimitSwap.sol";
+import { Controls, ControlsArgsBuilder } from "swap-vm/instructions/Controls.sol";
 
-// // Simple mock token for testing
-// contract MockToken is ERC20 {
-//     constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
+import { Program, ProgramBuilder } from "@1inch/swap-vm/test/utils/ProgramBuilder.sol";
+import { MockMakerHooks } from "@1inch/swap-vm/test/mocks/MockMakerHooks.sol";
 
-//     function mint(address to, uint256 amount) external {
-//         _mint(to, amount);
-//     }
-// }
+contract MakerHooksTest is Test, OpcodesDebug {
+    using ProgramBuilder for Program;
 
-// contract MockTaker is ITakerCallbacks {
-//     Aqua public immutable AQUA;
-//     SwapVM public immutable swapVM;
+    constructor() OpcodesDebug(address(new Aqua())) {}
 
-//     address public immutable owner;
+    SwapVMRouter public swapVM;
+    TokenMock public tokenA;
+    TokenMock public tokenB;
+    MockMakerHooks public hooksContract;
 
-//     modifier onlyOwner() {
-//         require(msg.sender == owner, "Not the owner");
-//         _;
-//     }
+    address public maker;
+    uint256 public makerPrivateKey;
+    address public taker = makeAddr("taker");
 
-//     modifier onlySwapVM() {
-//         require(msg.sender == address(swapVM), "Not the SwapVM");
-//         _;
-//     }
+    function setUp() public {
+        // Setup maker with known private key for signing
+        makerPrivateKey = 0x1234;
+        maker = vm.addr(makerPrivateKey);
 
-//     constructor(Aqua aqua, SwapVM swapVM_, address owner_) {
-//         AQUA = aqua;
-//         swapVM = swapVM_;
-//         owner = owner_;
-//     }
+        // Deploy SwapVM router
+        swapVM = new SwapVMRouter(address(0), "SwapVM", "1.0.0");
 
-//     function swap(
-//         ISwapVM.Order calldata order,
-//         address tokenIn,
-//         address tokenOut,
-//         uint256 amount,
-//         bytes calldata takerTraitsAndData
-//     ) public onlyOwner returns (uint256 amountIn, uint256 amountOut) {
-//         (amountIn, amountOut,) = swapVM.swap(
-//             order,
-//             tokenIn,
-//             tokenOut,
-//             amount,
-//             takerTraitsAndData
-//         );
-//     }
+        // Deploy mock tokens
+        tokenA = new TokenMock("Token A", "TKA");
+        tokenB = new TokenMock("Token B", "TKB");
 
-//     function preTransferInCallback(
-//         address maker,
-//         address /* taker */,
-//         address tokenIn,
-//         address /* tokenOut */,
-//         uint256 amountIn,
-//         uint256 /* amountOut */,
-//         bytes32 orderHash,
-//         bytes calldata /* takerData */
-//     ) external onlySwapVM {
-//         ERC20(tokenIn).approve(address(AQUA), amountIn);
-//         AQUA.push(maker, address(swapVM), orderHash, tokenIn, amountIn);
-//     }
+        // Deploy hooks contract
+        hooksContract = new MockMakerHooks();
 
-//     function preTransferOutCallback(
-//         address /* maker */,
-//         address /* taker */,
-//         address /* tokenIn */,
-//         address /* tokenOut */,
-//         uint256 /* amountIn */,
-//         uint256 /* amountOut */,
-//         bytes32 /* orderHash */,
-//         bytes calldata /* takerData */
-//     ) external onlySwapVM {
-//         // Custom exchange rate validation can be implemented here
-//     }
-// }
+        // Setup initial balances
+        tokenA.mint(maker, 1000e18);
+        tokenB.mint(taker, 1000e18);
 
-// contract SwapVMTest is Test, OpcodesDebug {
-//     using ProgramBuilder for Program;
+        // Approve SwapVM to spend tokens
+        vm.prank(maker);
+        tokenA.approve(address(swapVM), type(uint256).max);
 
-//     Aqua public immutable aqua = new Aqua();
+        vm.prank(taker);
+        tokenB.approve(address(swapVM), type(uint256).max);
+    }
+    function test_MakerHooksWithTakerData() public {
+        // === Setup ===
+        uint256 makerBalanceA = 100e18;
+        uint256 makerBalanceB = 200e18;
 
-//     constructor() OpcodesDebug(address(aqua)) {}
+        // Prepare hook data
+        bytes memory makerPreInData = abi.encodePacked("MAKER_PRE_IN_DATA");
+        bytes memory makerPostInData = abi.encodePacked("MAKER_POST_IN_DATA");
+        bytes memory makerPreOutData = abi.encodePacked("MAKER_PRE_OUT_DATA");
+        bytes memory makerPostOutData = abi.encodePacked("MAKER_POST_OUT_DATA");
 
-//     SwapVMRouter public swapVM;
-//     MockToken public tokenA;
-//     MockToken public tokenB;
+        bytes memory takerPreInData = abi.encodePacked("TAKER_PRE_IN_DATA");
+        bytes memory takerPostInData = abi.encodePacked("TAKER_POST_IN_DATA");
+        bytes memory takerPreOutData = abi.encodePacked("TAKER_PRE_OUT_DATA");
+        bytes memory takerPostOutData = abi.encodePacked("TAKER_POST_OUT_DATA");
 
-//     address public maker;
-//     uint256 public makerPrivateKey;
-//     MockTaker public taker;
+        // === Build Program ===
+        Program memory p = ProgramBuilder.init(_opcodes());
+        bytes memory programBytes = bytes.concat(
+            p.build(Balances._staticBalancesXD,
+                BalancesArgsBuilder.build(dynamic([address(tokenA), address(tokenB)]), dynamic([makerBalanceA, makerBalanceB]))),
+            p.build(LimitSwap._limitSwap1D,
+                LimitSwapArgsBuilder.build(address(tokenB), address(tokenA))),
+            p.build(Controls._salt,
+                ControlsArgsBuilder.buildSalt(0x9876))
+        );
 
-//     function setUp() public {
-//         // Setup maker with known private key for signing
-//         makerPrivateKey = 0x1234;
-//         maker = vm.addr(makerPrivateKey);
+        // === Create Order with Hooks ===
+        ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
+            maker: maker,
+            shouldUnwrapWeth: false,
+            useAquaInsteadOfSignature: false,
+            allowZeroAmountIn: false,
+            receiver: address(0),
+            hasPreTransferInHook: true,
+            hasPostTransferInHook: true,
+            hasPreTransferOutHook: true,
+            hasPostTransferOutHook: true,
+            preTransferInTarget: address(hooksContract),
+            preTransferInData: makerPreInData,
+            postTransferInTarget: address(hooksContract),
+            postTransferInData: makerPostInData,
+            preTransferOutTarget: address(hooksContract),
+            preTransferOutData: makerPreOutData,
+            postTransferOutTarget: address(hooksContract),
+            postTransferOutData: makerPostOutData,
+            program: programBytes
+        }));
 
-//         // Deploy custom SwapVM router with Invalidators
-//         swapVM = new SwapVMRouter(address(aqua), "SwapVM", "1.0.0");
+        // === Sign Order ===
+        bytes32 orderHash = swapVM.hash(order);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, orderHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
 
-//         taker = new MockTaker(aqua, swapVM, address(this));
+        // === Create TakerData with Hook Data ===
+        bytes memory takerData = TakerTraitsLib.build(TakerTraitsLib.Args({
+            taker: taker,
+            isExactIn: true,
+            shouldUnwrapWeth: false,
+            isStrictThresholdAmount: false,
+            isFirstTransferFromTaker: false,
+            useTransferFromAndAquaPush: true,
+            threshold: "", // min TokenA to receive
+            to: address(0), // 0 = taker
+            hasPreTransferInCallback: false,
+            hasPreTransferOutCallback: false,
+            preTransferInHookData: takerPreInData,
+            postTransferInHookData: takerPostInData,
+            preTransferOutHookData: takerPreOutData,
+            postTransferOutHookData: takerPostOutData,
+            preTransferInCallbackData: "",
+            preTransferOutCallbackData: "",
+            instructionsArgs: "",
+            signature: signature
+        }));
 
-//         // Deploy mock tokens
-//         tokenA = new MockToken("Token A", "TKA");
-//         tokenB = new MockToken("Token B", "TKB");
+        // === Execute Swap ===
+        vm.prank(taker);
+        (uint256 amountIn, uint256 amountOut,) = swapVM.swap(
+            order,
+            address(tokenB), // tokenIn
+            address(tokenA), // tokenOut
+            50e18,           // amount of tokenB to spend
+            takerData
+        );
 
-//         // Setup initial balances
-//         tokenA.mint(maker, 1000e18);
-//         tokenB.mint(address(taker), 1000e18);
+        // === Verify Hook Execution ===
+        // Check that all hooks were called
+        assertTrue(hooksContract.allHooksCalled(), "Not all hooks were called");
 
-//         // Approve SwapVM to spend tokens
-//         vm.prank(maker);
-//         tokenA.approve(address(swapVM), type(uint256).max);
-//     }
+        // Verify hook call counts
+        assertEq(hooksContract.preTransferInCallCount(), 1, "preTransferIn should be called once");
+        assertEq(hooksContract.postTransferInCallCount(), 1, "postTransferIn should be called once");
+        assertEq(hooksContract.preTransferOutCallCount(), 1, "preTransferOut should be called once");
+        assertEq(hooksContract.postTransferOutCallCount(), 1, "postTransferOut should be called once");
 
-//     function test_XYCSwap() public {
-//         Program memory p = ProgramBuilder.init(_opcodes());
-//         bytes memory programBytes = bytes.concat(
-//             p.build(XYCSwap._xycSwapXD)
-//             // NO INVALIDATOR - order can be filled multiple times!
-//         );
+        // === Verify Hook Data - PreTransferIn ===
+        (
+            address lastMaker,
+            address lastTaker,
+            address lastTokenIn,
+            address lastTokenOut,
+            uint256 lastAmountIn,
+            uint256 lastAmountOut,
+            bytes32 lastOrderHash,
+            bytes memory lastMakerData,
+            bytes memory lastTakerData
+        ) = hooksContract.lastPreTransferIn();
 
-//         ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
-//             maker: maker,
-//             shouldUnwrapWeth: false,
-//             useAquaInsteadOfSignature: true,
-//             allowZeroAmountIn: false,
-//             receiver: address(0),
-//             hasPreTransferInHook: false,
-//             hasPostTransferInHook: false,
-//             hasPreTransferOutHook: false,
-//             hasPostTransferOutHook: false,
-//             preTransferInTarget: address(0),
-//             preTransferInData: "",
-//             postTransferInTarget: address(0),
-//             postTransferInData: "",
-//             preTransferOutTarget: address(0),
-//             preTransferOutData: "",
-//             postTransferOutTarget: address(0),
-//             postTransferOutData: "",
-//             program: programBytes
-//         }));
+        assertEq(lastMaker, maker, "PreTransferIn: incorrect maker");
+        assertEq(lastTaker, taker, "PreTransferIn: incorrect taker");
+        assertEq(lastTokenIn, address(tokenB), "PreTransferIn: incorrect tokenIn");
+        assertEq(lastTokenOut, address(tokenA), "PreTransferIn: incorrect tokenOut");
+        assertEq(lastAmountIn, amountIn, "PreTransferIn: incorrect amountIn");
+        assertEq(lastAmountOut, amountOut, "PreTransferIn: incorrect amountOut");
+        assertEq(lastOrderHash, orderHash, "PreTransferIn: incorrect orderHash");
+        assertEq(lastMakerData, makerPreInData, "PreTransferIn: incorrect maker data");
+        assertEq(lastTakerData, takerPreInData, "PreTransferIn: incorrect taker data");
 
-//         bytes32 orderHash = swapVM.hash(order);
+        // === Verify Hook Data - PostTransferIn ===
+        (
+            lastMaker,
+            lastTaker,
+            lastTokenIn,
+            lastTokenOut,
+            lastAmountIn,
+            lastAmountOut,
+            lastOrderHash,
+            lastMakerData,
+            lastTakerData
+        ) = hooksContract.lastPostTransferIn();
 
-//         bytes memory takerData = TakerTraitsLib.build(TakerTraitsLib.Args({
-//             taker: address(taker),
-//             isExactIn: true,
-//             shouldUnwrapWeth: false,
-//             isStrictThresholdAmount: false,
-//             isFirstTransferFromTaker: false,
-//             useTransferFromAndAquaPush: false,
-//             threshold: abi.encodePacked(uint256(20e18)),
-//             to: address(0),
-//             hasPreTransferInCallback: true,
-//             hasPreTransferOutCallback: false,
-//             preTransferInHookData: "",
-//             postTransferInHookData: "",
-//             preTransferOutHookData: "",
-//             postTransferOutHookData: "",
-//             preTransferInCallbackData: "",
-//             preTransferOutCallbackData: "",
-//             instructionsArgs: "",
-//             signature: ""
-//         }));
+        assertEq(lastMaker, maker, "PostTransferIn: incorrect maker");
+        assertEq(lastTaker, taker, "PostTransferIn: incorrect taker");
+        assertEq(lastTokenIn, address(tokenB), "PostTransferIn: incorrect tokenIn");
+        assertEq(lastTokenOut, address(tokenA), "PostTransferIn: incorrect tokenOut");
+        assertEq(lastAmountIn, amountIn, "PostTransferIn: incorrect amountIn");
+        assertEq(lastAmountOut, amountOut, "PostTransferIn: incorrect amountOut");
+        assertEq(lastOrderHash, orderHash, "PostTransferIn: incorrect orderHash");
+        assertEq(lastMakerData, makerPostInData, "PostTransferIn: incorrect maker data");
+        assertEq(lastTakerData, takerPostInData, "PostTransferIn: incorrect taker data");
 
-//         vm.prank(maker);
-//         tokenA.approve(address(aqua), type(uint256).max);
+        // === Verify Hook Data - PreTransferOut ===
+        (
+            lastMaker,
+            lastTaker,
+            lastTokenIn,
+            lastTokenOut,
+            lastAmountIn,
+            lastAmountOut,
+            lastOrderHash,
+            lastMakerData,
+            lastTakerData
+        ) = hooksContract.lastPreTransferOut();
 
-//         vm.prank(maker);
-//         bytes32 strategyHash = aqua.ship(
-//             address(swapVM),
-//             abi.encode(order),
-//             dynamic([address(tokenA), address(tokenB)]),
-//             dynamic([uint256(100e18), uint256(200e18)])
-//         );
-//         assertEq(strategyHash, orderHash, "Strategy hash mismatch");
+        assertEq(lastMaker, maker, "PreTransferOut: incorrect maker");
+        assertEq(lastTaker, taker, "PreTransferOut: incorrect taker");
+        assertEq(lastTokenIn, address(tokenB), "PreTransferOut: incorrect tokenIn");
+        assertEq(lastTokenOut, address(tokenA), "PreTransferOut: incorrect tokenOut");
+        assertEq(lastAmountIn, amountIn, "PreTransferOut: incorrect amountIn");
+        assertEq(lastAmountOut, amountOut, "PreTransferOut: incorrect amountOut");
+        assertEq(lastOrderHash, orderHash, "PreTransferOut: incorrect orderHash");
+        assertEq(lastMakerData, makerPreOutData, "PreTransferOut: incorrect maker data");
+        assertEq(lastTakerData, takerPreOutData, "PreTransferOut: incorrect taker data");
 
-//         (, uint256 amountOut) = taker.swap(
-//             order,
-//             address(tokenB),
-//             address(tokenA),
-//             50e18,
-//             takerData
-//         );
+        // === Verify Hook Data - PostTransferOut ===
+        (
+            lastMaker,
+            lastTaker,
+            lastTokenIn,
+            lastTokenOut,
+            lastAmountIn,
+            lastAmountOut,
+            lastOrderHash,
+            lastMakerData,
+            lastTakerData
+        ) = hooksContract.lastPostTransferOut();
 
-//         uint256 expectedAmountOut = (50e18 * 100e18) / (200e18 + 50e18);
-//         assertEq(amountOut, expectedAmountOut, "Unexpected amountOut");
-//     }
-// }
+        assertEq(lastMaker, maker, "PostTransferOut: incorrect maker");
+        assertEq(lastTaker, taker, "PostTransferOut: incorrect taker");
+        assertEq(lastTokenIn, address(tokenB), "PostTransferOut: incorrect tokenIn");
+        assertEq(lastTokenOut, address(tokenA), "PostTransferOut: incorrect tokenOut");
+        assertEq(lastAmountIn, amountIn, "PostTransferOut: incorrect amountIn");
+        assertEq(lastAmountOut, amountOut, "PostTransferOut: incorrect amountOut");
+        assertEq(lastOrderHash, orderHash, "PostTransferOut: incorrect orderHash");
+        assertEq(lastMakerData, makerPostOutData, "PostTransferOut: incorrect maker data");
+        assertEq(lastTakerData, takerPostOutData, "PostTransferOut: incorrect taker data");
+
+        // === Verify Swap Results ===
+        assertEq(amountIn, 50e18, "Incorrect amountIn");
+        assertEq(amountOut, 25e18, "Incorrect amountOut");
+        assertEq(tokenA.balanceOf(taker), 25e18, "Incorrect TokenA received");
+        assertEq(tokenB.balanceOf(maker), 50e18, "Incorrect TokenB received by maker");
+    }
+
+    function test_HooksWithEmptyTakerData() public {
+        // === Setup ===
+        uint256 makerBalanceA = 100e18;
+        uint256 makerBalanceB = 200e18;
+
+        // Prepare hook data (only maker data, no taker data)
+        bytes memory makerPreInData = abi.encodePacked("MAKER_DATA");
+        bytes memory makerPostInData = abi.encodePacked("MAKER_DATA_2");
+
+        // === Build Program ===
+        Program memory p = ProgramBuilder.init(_opcodes());
+        bytes memory programBytes = bytes.concat(
+            p.build(Balances._staticBalancesXD,
+                BalancesArgsBuilder.build(dynamic([address(tokenA), address(tokenB)]), dynamic([makerBalanceA, makerBalanceB]))),
+            p.build(LimitSwap._limitSwap1D,
+                LimitSwapArgsBuilder.build(address(tokenB), address(tokenA))),
+            p.build(Controls._salt,
+                ControlsArgsBuilder.buildSalt(0x5555))
+        );
+
+        // === Create Order with Only Some Hooks ===
+        ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
+            maker: maker,
+            shouldUnwrapWeth: false,
+            useAquaInsteadOfSignature: false,
+            allowZeroAmountIn: false,
+            receiver: address(0),
+            hasPreTransferInHook: true,
+            hasPostTransferInHook: true,
+            hasPreTransferOutHook: false,
+            hasPostTransferOutHook: false,
+            preTransferInTarget: address(hooksContract),
+            preTransferInData: makerPreInData,
+            postTransferInTarget: address(hooksContract),
+            postTransferInData: makerPostInData,
+            preTransferOutTarget: address(0),
+            preTransferOutData: "",
+            postTransferOutTarget: address(0),
+            postTransferOutData: "",
+            program: programBytes
+        }));
+
+        // === Sign Order ===
+        bytes32 orderHash = swapVM.hash(order);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, orderHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // === Create TakerData WITHOUT Hook Data ===
+        bytes memory takerData = TakerTraitsLib.build(TakerTraitsLib.Args({
+            taker: taker,
+            isExactIn: true,
+            shouldUnwrapWeth: false,
+            isStrictThresholdAmount: false,
+            isFirstTransferFromTaker: true,
+            useTransferFromAndAquaPush: false,
+            threshold: abi.encodePacked(uint256(25e18)),
+            to: address(0),
+            hasPreTransferInCallback: false,
+            hasPreTransferOutCallback: false,
+            preTransferInHookData: "", // Empty taker data
+            postTransferInHookData: "", // Empty taker data
+            preTransferOutHookData: "",
+            postTransferOutHookData: "",
+            preTransferInCallbackData: "",
+            preTransferOutCallbackData: "",
+            instructionsArgs: "",
+            signature: signature
+        }));
+
+        // Reset hook counters
+        hooksContract.resetCounters();
+
+        // === Execute Swap ===
+        vm.prank(taker);
+        swapVM.swap(
+            order,
+            address(tokenB),
+            address(tokenA),
+            50e18,
+            takerData
+        );
+
+        // === Verify Hook Execution ===
+        assertEq(hooksContract.preTransferInCallCount(), 1, "preTransferIn should be called");
+        assertEq(hooksContract.postTransferInCallCount(), 1, "postTransferIn should be called");
+        assertEq(hooksContract.preTransferOutCallCount(), 0, "preTransferOut should not be called");
+        assertEq(hooksContract.postTransferOutCallCount(), 0, "postTransferOut should not be called");
+
+        // === Verify Empty Taker Data in Hooks ===
+        (,,,,,,, bytes memory lastMakerData, bytes memory lastTakerData) = hooksContract.lastPreTransferIn();
+        assertEq(lastMakerData, makerPreInData, "PreTransferIn: incorrect maker data");
+        assertEq(lastTakerData.length, 0, "PreTransferIn: taker data should be empty");
+
+        (,,,,,,, lastMakerData, lastTakerData) = hooksContract.lastPostTransferIn();
+        assertEq(lastMakerData, makerPostInData, "PostTransferIn: incorrect maker data");
+        assertEq(lastTakerData.length, 0, "PostTransferIn: taker data should be empty");
+    }
+
+    function test_HooksExecutionOrder() public {
+        // This test verifies hooks are called in the correct order
+        // Create a special hooks contract that tracks call order
+
+        // === Setup ===
+        uint256 makerBalanceA = 100e18;
+        uint256 makerBalanceB = 200e18;
+
+        // === Build Program ===
+        Program memory p = ProgramBuilder.init(_opcodes());
+        bytes memory programBytes = bytes.concat(
+            p.build(Balances._staticBalancesXD,
+                BalancesArgsBuilder.build(dynamic([address(tokenA), address(tokenB)]), dynamic([makerBalanceA, makerBalanceB]))),
+            p.build(LimitSwap._limitSwap1D,
+                LimitSwapArgsBuilder.build(address(tokenB), address(tokenA))),
+            p.build(Controls._salt,
+                ControlsArgsBuilder.buildSalt(0x7777))
+        );
+
+        // === Create Order with All Hooks ===
+        ISwapVM.Order memory order = MakerTraitsLib.build(MakerTraitsLib.Args({
+            maker: maker,
+            shouldUnwrapWeth: false,
+            useAquaInsteadOfSignature: false,
+            allowZeroAmountIn: false,
+            receiver: address(0),
+            hasPreTransferInHook: true,
+            hasPostTransferInHook: true,
+            hasPreTransferOutHook: true,
+            hasPostTransferOutHook: true,
+            preTransferInTarget: address(hooksContract),
+            preTransferInData: abi.encodePacked("PRE_IN"),
+            postTransferInTarget: address(hooksContract),
+            postTransferInData: abi.encodePacked("POST_IN"),
+            preTransferOutTarget: address(hooksContract),
+            preTransferOutData: abi.encodePacked("PRE_OUT"),
+            postTransferOutTarget: address(hooksContract),
+            postTransferOutData: abi.encodePacked("POST_OUT"),
+            program: programBytes
+        }));
+
+        // === Sign Order ===
+        bytes32 orderHash = swapVM.hash(order);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(makerPrivateKey, orderHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        // === Create TakerData ===
+        bytes memory takerData = TakerTraitsLib.build(TakerTraitsLib.Args({
+            taker: taker,
+            isExactIn: true,
+            shouldUnwrapWeth: false,
+            isStrictThresholdAmount: false,
+            isFirstTransferFromTaker: true, // This means transferIn happens first
+            useTransferFromAndAquaPush: false,
+            threshold: abi.encodePacked(uint256(25e18)),
+            to: address(0),
+            hasPreTransferInCallback: false,
+            hasPreTransferOutCallback: false,
+            preTransferInHookData: abi.encodePacked("TAKER_PRE_IN"),
+            postTransferInHookData: abi.encodePacked("TAKER_POST_IN"),
+            preTransferOutHookData: abi.encodePacked("TAKER_PRE_OUT"),
+            postTransferOutHookData: abi.encodePacked("TAKER_POST_OUT"),
+            preTransferInCallbackData: "",
+            preTransferOutCallbackData: "",
+            instructionsArgs: "",
+            signature: signature
+        }));
+
+        // Reset counters
+        hooksContract.resetCounters();
+
+        // === Execute Swap and Check Events Order ===
+        vm.recordLogs();
+
+        vm.prank(taker);
+        swapVM.swap(
+            order,
+            address(tokenB),
+            address(tokenA),
+            50e18,
+            takerData
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        // Find hook events in order
+        uint256 preInIndex = type(uint256).max;
+        uint256 postInIndex = type(uint256).max;
+        uint256 preOutIndex = type(uint256).max;
+        uint256 postOutIndex = type(uint256).max;
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("PreTransferInCalled(address,address,address,address,uint256,uint256,bytes32,bytes,bytes)")) {
+                preInIndex = i;
+            }
+            if (logs[i].topics[0] == keccak256("PostTransferInCalled(address,address,address,address,uint256,uint256,bytes32,bytes,bytes)")) {
+                postInIndex = i;
+            }
+            if (logs[i].topics[0] == keccak256("PreTransferOutCalled(address,address,address,address,uint256,uint256,bytes32,bytes,bytes)")) {
+                preOutIndex = i;
+            }
+            if (logs[i].topics[0] == keccak256("PostTransferOutCalled(address,address,address,address,uint256,uint256,bytes32,bytes,bytes)")) {
+                postOutIndex = i;
+            }
+        }
+
+        // Verify order when isFirstTransferFromTaker = true:
+        // 1. PreTransferIn
+        // 2. PostTransferIn
+        // 3. PreTransferOut
+        // 4. PostTransferOut
+        assertTrue(preInIndex < postInIndex, "PreTransferIn should be called before PostTransferIn");
+        assertTrue(postInIndex < preOutIndex, "PostTransferIn should be called before PreTransferOut");
+        assertTrue(preOutIndex < postOutIndex, "PreTransferOut should be called before PostTransferOut");
+    }
+}
